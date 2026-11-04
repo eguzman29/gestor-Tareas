@@ -123,6 +123,20 @@ function id_de_ruta(string $ruta): int
     return (int) $texto_id;
 }
 
+function indice_tarea_propia(array $tareas, int $id): int
+{
+    foreach ($tareas as $indice => $tarea) {
+        if ($tarea['id'] === $id) {
+            if ($tarea['usuario_id'] !== CURRENT_USER_ID) {
+                error_api(403, 'No tienes permiso para modificar esta tarea.', ['id: pertenece a otro usuario']);
+            }
+            return $indice;
+        }
+    }
+
+    error_api(404, 'La tarea no existe.', ['id: no encontrado']);
+}
+
 $metodo = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $ruta = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $ruta = rtrim($ruta, '/') ?: '/';
@@ -172,8 +186,35 @@ if ($metodo === 'POST' && $ruta === '/tasks') {
     responder(201, datos_publicos($tarea));
 }
 
+if ($metodo === 'PUT' && str_starts_with($ruta, '/tasks/')) {
+    $id = id_de_ruta($ruta);
+    $datos = validar_tarea(leer_json());
+    $indice = indice_tarea_propia($tareas, $id);
+    foreach ($tareas as $tarea) {
+        if ($tarea['id'] !== $id
+            && $tarea['usuario_id'] === CURRENT_USER_ID
+            && $tarea['titulo'] === $datos['titulo']
+            && $tarea['fecha_limite'] === $datos['fecha_limite']) {
+            error_api(409, 'Ya tienes otra tarea con ese título y fecha.', ['titulo y fecha_limite: ya están registrados']);
+        }
+    }
+
+    $tareas[$indice] = ['id' => $id, 'usuario_id' => CURRENT_USER_ID, ...$datos];
+    guardar_tareas($tareas);
+    responder(200, datos_publicos($tareas[$indice]));
+}
+
+if ($metodo === 'DELETE' && str_starts_with($ruta, '/tasks/')) {
+    $id = id_de_ruta($ruta);
+    $indice = indice_tarea_propia($tareas, $id);
+    unset($tareas[$indice]);
+    guardar_tareas($tareas);
+    http_response_code(204);
+    exit;
+}
+
 if (str_starts_with($ruta, '/tasks')) {
-    error_api(405, 'Método no permitido.', ['método: usa GET o POST según la ruta']);
+    error_api(405, 'Método no permitido.', ['método: usa GET, POST, PUT o DELETE según la ruta']);
 }
 
 error_api(404, 'La ruta no existe.', ['ruta: no encontrada']);

@@ -1,12 +1,27 @@
 {
-  "matricula": "20207889",
+  "matricula": "20205276",
   "base": "http://127.0.0.1:8000",
   "coleccion": "/tasks",
   "campo_id": "id",
-  "valido":   {"titulo": "Entregar practica", "estado": "pendiente", "prioridad": 3, "fecha_limite": "2026-11-04"},
-  "invalido": {"titulo": "", "estado": "hecho", "prioridad": 9, "fecha_limite": "manana"},
+  "valido": {
+    "titulo": "Entregar practica",
+    "estado": "pendiente",
+    "prioridad": 3,
+    "fecha_limite": "2026-11-04"
+  },
+  "invalido": {
+    "titulo": "",
+    "estado": "hecho",
+    "prioridad": 9,
+    "fecha_limite": "manana"
+  },
   "metodo_cambio": "PUT",
-  "cambio":   {"titulo": "Entregar practica corregida", "estado": "en_progreso", "prioridad": 4, "fecha_limite": "2026-11-05"},
+  "cambio": {
+    "titulo": "Entregar practica corregida",
+    "estado": "en_progreso",
+    "prioridad": 4,
+    "fecha_limite": "2026-11-05"
+  },
   "id_inexistente": "999999",
   "encabezados": {}
 }
