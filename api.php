@@ -6,8 +6,36 @@ const DATABASE_FILE = __DIR__ . '/tasks.sqlite';
 const CURRENT_USER_ID = 1;
 
 $ruta_actual = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-if (rtrim($ruta_actual, '/') === '/docs' || rtrim($ruta_actual, '/') === '/openapi.json') {
-    $nombre_contrato = rtrim($ruta_actual, '/') === '/openapi.json' ? 'openapi.json' : 'openapi.yaml';
+if (rtrim($ruta_actual, '/') === '/docs') {
+    header('Content-Type: text/html; charset=utf-8');
+    echo <<<'HTML'
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>API de Tareas - Swagger UI</title>
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+        window.onload = () => SwaggerUIBundle({
+            url: "/openapi.json",
+            dom_id: "#swagger-ui",
+            deepLinking: true,
+            presets: [SwaggerUIBundle.presets.apis]
+        });
+    </script>
+</body>
+</html>
+HTML;
+    exit;
+}
+
+if (rtrim($ruta_actual, '/') === '/openapi.json') {
+    $nombre_contrato = 'openapi.json';
     $contrato = file_get_contents(__DIR__ . '/' . $nombre_contrato);
     if ($contrato === false) {
         http_response_code(500);

@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: "API de Tarea"
-  version: "1.0"
-  description: "Todos los errores responden {\"error\", \"detalles\"}."
+  title: "Gestor personal de tareas"
+  version: "1.0.0"
+  description: "CRUD de tareas con SQLite. Todos los errores responden {\"error\", \"detalles\"}."
 paths:
   "/tasks":
     get:

@@ -1,0 +1,128 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Gestor personal de tareas",
+    "version": "1.0.0",
+    "description": "CRUD de tareas con SQLite. Todos los errores responden {\"error\", \"detalles\"}."
+  },
+  "servers": [
+    {"url": "http://127.0.0.1:8010", "description": "Servidor local PHP"}
+  ],
+  "paths": {
+    "/tasks": {
+      "get": {
+        "tags": ["tasks"],
+        "summary": "Listar tareas",
+        "responses": {
+          "200": {
+            "description": "Lista de tareas del usuario actual",
+            "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Task"}}}}
+          },
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "422": {"$ref": "#/components/responses/ValidationError"}
+        }
+      },
+      "post": {
+        "tags": ["tasks"],
+        "summary": "Crear tarea",
+        "description": "Crea una tarea nueva. No se acepta el id enviado por el cliente.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskNuevo"}}}
+        },
+        "responses": {
+          "201": {
+            "description": "Tarea creada",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Task"}}}
+          },
+          "400": {"$ref": "#/components/responses/BadJson"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "422": {"$ref": "#/components/responses/ValidationError"}
+        }
+      }
+    },
+    "/tasks/{id}": {
+      "parameters": [{
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Identificador entero de la tarea",
+        "schema": {"type": "integer", "minimum": 1}
+      }],
+      "get": {
+        "tags": ["tasks"],
+        "summary": "Consultar tarea",
+        "responses": {
+          "200": {
+            "description": "Tarea encontrada",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Task"}}}
+          },
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "422": {"$ref": "#/components/responses/ValidationError"}
+        }
+      },
+      "put": {
+        "tags": ["tasks"],
+        "summary": "Reemplazar tarea",
+        "description": "Reemplaza todos los campos de la tarea. Es idempotente.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskNuevo"}}}
+        },
+        "responses": {
+          "200": {
+            "description": "Tarea reemplazada",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Task"}}}
+          },
+          "400": {"$ref": "#/components/responses/BadJson"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "422": {"$ref": "#/components/responses/ValidationError"}
+        }
+      },
+      "delete": {
+        "tags": ["tasks"],
+        "summary": "Borrar tarea",
+        "responses": {
+          "204": {"description": "Tarea borrada sin cuerpo"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "422": {"$ref": "#/components/responses/ValidationError"}
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "TaskNuevo": {
+        "type": "object",
+        "required": ["titulo", "estado", "prioridad", "fecha_limite"],
+        "properties": {
+          "titulo": {"type": "string", "minLength": 3, "maxLength": 100, "example": "Entregar practica"},
+          "estado": {"type": "string", "enum": ["pendiente", "en_progreso", "terminada"], "example": "pendiente"},
+          "prioridad": {"type": "integer", "minimum": 1, "maximum": 5, "example": 3},
+          "fecha_limite": {"type": "string", "format": "date", "description": "AAAA-MM-DD y no anterior a hoy", "example": "2026-11-06"}
+        }
+      },
+      "Task": {
+        "allOf": [
+          {"$ref": "#/components/schemas/TaskNuevo"},
+          {"type": "object", "required": ["id"], "properties": {"id": {"type": "integer", "example": 1}}}
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "required": ["error", "detalles"],
+        "properties": {
+          "error": {"type": "string", "example": "Los datos de la tarea no son válidos."},
+          "detalles": {"type": "array", "items": {"type": "string"}, "example": ["titulo: es obligatorio"]}
+        }
+      }
+    },
+    "responses": {
+      "BadJson": {"description": "El cuerpo no es un JSON válido", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "ValidationError": {"description": "Los datos o el id no cumplen las reglas", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "NotFound": {"description": "La tarea no existe", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "Conflict": {"description": "Ya existe una tarea con el mismo título y fecha", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+    }
+  }
+}
