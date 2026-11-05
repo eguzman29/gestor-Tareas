@@ -1,0 +1,129 @@
+openapi: 3.0.3
+info:
+  title: "API de Tarea"
+  version: "1.0"
+  description: "Todos los errores responden {\"error\", \"detalles\"}."
+paths:
+  "/tasks":
+    get:
+      summary: "Listar tasks"
+      responses:
+        "200":
+          description: "Lista"
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Task"}
+    post:
+      summary: "Crear"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TaskNuevo"}
+      responses:
+        "201":
+          description: "Creado"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Task"}
+        "400": {$ref: "#/components/responses/JsonInvalido"}
+        "409": {$ref: "#/components/responses/Conflicto"}
+        "422": {$ref: "#/components/responses/DatosInvalidos"}
+  "/tasks/{id}":
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      summary: "Consultar uno"
+      responses:
+        "200":
+          description: "Encontrado"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Task"}
+        "404": {$ref: "#/components/responses/NoExiste"}
+    put:
+      summary: "Reemplazar completo"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TaskNuevo"}
+      responses:
+        "200":
+          description: "Reemplazado"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Task"}
+        "400": {$ref: "#/components/responses/JsonInvalido"}
+        "404": {$ref: "#/components/responses/NoExiste"}
+        "409": {$ref: "#/components/responses/Conflicto"}
+        "422": {$ref: "#/components/responses/DatosInvalidos"}
+    delete:
+      summary: "Borrar"
+      responses:
+        "204":
+          description: "Borrado"
+        "404": {$ref: "#/components/responses/NoExiste"}
+components:
+  schemas:
+    TaskNuevo:
+      type: object
+      required: ["titulo", "estado", "prioridad", "fecha_limite"]
+      properties:
+        "titulo":
+          type: string
+          minLength: 3
+          maxLength: 100
+          description: "obligatorio, de 3 a 100 caracteres"
+        "estado":
+          type: string
+          enum: ["pendiente", "en_progreso", "terminada"]
+          description: "solo pendiente, en_progreso o terminada"
+        "prioridad":
+          type: integer
+          description: "entre 1 y 5"
+        "fecha_limite":
+          type: string
+          format: date
+          description: "formato AAAA-MM-DD y no puede ser anterior a hoy"
+    Task:
+      allOf:
+        - $ref: "#/components/schemas/TaskNuevo"
+        - type: object
+          required: ["id"]
+          properties:
+            id: {type: integer}
+    Error:
+      type: object
+      required: ["error", "detalles"]
+      properties:
+        error: {type: string}
+        detalles:
+          type: array
+          items: {type: string}
+  responses:
+    JsonInvalido:
+      description: "El cuerpo no es un JSON válido"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    DatosInvalidos:
+      description: "Los datos no cumplen las reglas"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    NoExiste:
+      description: "No existe ese Task"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Conflicto:
+      description: "Un POST /tasks con datos válidos choca con lo que ya hay si el mismo usuario ya tiene una tarea con el mismo título y la misma fecha límite."
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
