@@ -17,8 +17,9 @@ La implementación actual incluye:
 - `POST /tasks`: valida y crea una tarea.
 - `PUT /tasks/{id}`: valida y reemplaza toda la tarea (idempotente; el 409 ignora la propia tarea).
 - `DELETE /tasks/{id}`: borra la tarea y responde 204 sin cuerpo; un segundo DELETE responde 404.
+- `GET /docs`: sirve el contrato `openapi.yaml`.
 
-Los datos se guardan temporalmente en `tasks_data.json` para conservarlos entre peticiones del servidor integrado de PHP. El archivo se crea automáticamente y no forma parte del código de entrega.
+Los datos se guardan en `tasks.sqlite`, una base SQLite creada automáticamente mediante PDO. Las consultas usan parámetros preparados (`?`) y el archivo local está excluido del repositorio.
 
 En otra terminal, ejecuta la prueba proporcionada:
 

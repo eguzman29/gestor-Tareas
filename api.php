@@ -2,8 +2,21 @@
 
 declare(strict_types=1);
 
-const STORAGE_FILE = __DIR__ . '/tasks_data.json';
+const DATABASE_FILE = __DIR__ . '/tasks.sqlite';
 const CURRENT_USER_ID = 1;
+
+$ruta_actual = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+if (rtrim($ruta_actual, '/') === '/docs' || rtrim($ruta_actual, '/') === '/openapi.json') {
+    $nombre_contrato = rtrim($ruta_actual, '/') === '/openapi.json' ? 'openapi.json' : 'openapi.yaml';
+    $contrato = file_get_contents(__DIR__ . '/' . $nombre_contrato);
+    if ($contrato === false) {
+        http_response_code(500);
+        exit('No se pudo leer el contrato OpenAPI.');
+    }
+    header('Content-Type: ' . ($nombre_contrato === 'openapi.json' ? 'application/json' : 'application/yaml') . '; charset=utf-8');
+    echo $contrato;
+    exit;
+}
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -19,24 +32,106 @@ function error_api(int $codigo, string $mensaje, array $detalles = []): never
     responder($codigo, ['error' => $mensaje, 'detalles' => $detalles]);
 }
 
-function leer_tareas(): array
+function conectar_db(): PDO
 {
-    if (!is_file(STORAGE_FILE)) {
-        return [];
+    static $db = null;
+    if ($db instanceof PDO) {
+        return $db;
     }
 
-    $contenido = file_get_contents(STORAGE_FILE);
-    $tareas = json_decode($contenido ?: '[]', true);
-    return is_array($tareas) ? $tareas : [];
+    $db = new PDO('sqlite:' . DATABASE_FILE);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    $db->exec(
+        'CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            titulo TEXT NOT NULL,
+            estado TEXT NOT NULL,
+            prioridad INTEGER NOT NULL,
+            fecha_limite TEXT NOT NULL,
+            UNIQUE (usuario_id, titulo, fecha_limite)
+        )'
+    );
+
+    return $db;
 }
 
-function guardar_tareas(array $tareas): void
+function leer_tareas(PDO $db, int $usuario_id): array
 {
-    file_put_contents(
-        STORAGE_FILE,
-        json_encode(array_values($tareas), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT),
-        LOCK_EX
+    $consulta = $db->prepare(
+        'SELECT id, usuario_id, titulo, estado, prioridad, fecha_limite
+         FROM tasks WHERE usuario_id = ? ORDER BY id'
     );
+    $consulta->execute([$usuario_id]);
+    return $consulta->fetchAll();
+}
+
+function buscar_tarea(PDO $db, int $id): ?array
+{
+    $consulta = $db->prepare(
+        'SELECT id, usuario_id, titulo, estado, prioridad, fecha_limite
+         FROM tasks WHERE id = ?'
+    );
+    $consulta->execute([$id]);
+    $tarea = $consulta->fetch();
+    return $tarea === false ? null : $tarea;
+}
+
+function existe_duplicado(PDO $db, array $datos, int $usuario_id, ?int $excluir_id = null): bool
+{
+    $sql = 'SELECT id FROM tasks
+            WHERE usuario_id = ? AND titulo = ? AND fecha_limite = ?';
+    $parametros = [$usuario_id, $datos['titulo'], $datos['fecha_limite']];
+    if ($excluir_id !== null) {
+        $sql .= ' AND id <> ?';
+        $parametros[] = $excluir_id;
+    }
+
+    $consulta = $db->prepare($sql);
+    $consulta->execute($parametros);
+    return $consulta->fetch() !== false;
+}
+
+function guardar_tareas(PDO $db, array $datos, int $usuario_id): array
+{
+    $consulta = $db->prepare(
+        'INSERT INTO tasks (usuario_id, titulo, estado, prioridad, fecha_limite)
+         VALUES (?, ?, ?, ?, ?)'
+    );
+    $consulta->execute([
+        $usuario_id,
+        $datos['titulo'],
+        $datos['estado'],
+        $datos['prioridad'],
+        $datos['fecha_limite'],
+    ]);
+
+    return buscar_tarea($db, (int) $db->lastInsertId());
+}
+
+function actualizar_tarea(PDO $db, int $id, array $datos): array
+{
+    $consulta = $db->prepare(
+        'UPDATE tasks
+         SET titulo = ?, estado = ?, prioridad = ?, fecha_limite = ?
+         WHERE id = ?'
+    );
+    $consulta->execute([
+        $datos['titulo'],
+        $datos['estado'],
+        $datos['prioridad'],
+        $datos['fecha_limite'],
+        $id,
+    ]);
+
+    return buscar_tarea($db, $id);
+}
+
+function borrar_tarea(PDO $db, int $id): void
+{
+    $consulta = $db->prepare('DELETE FROM tasks WHERE id = ?');
+    $consulta->execute([$id]);
 }
 
 function datos_publicos(array $tarea): array
@@ -123,42 +218,22 @@ function id_de_ruta(string $ruta): int
     return (int) $texto_id;
 }
 
-function indice_tarea_propia(array $tareas, int $id): int
-{
-    foreach ($tareas as $indice => $tarea) {
-        if ($tarea['id'] === $id) {
-            if ($tarea['usuario_id'] !== CURRENT_USER_ID) {
-                error_api(403, 'No tienes permiso para modificar esta tarea.', ['id: pertenece a otro usuario']);
-            }
-            return $indice;
-        }
-    }
-
-    error_api(404, 'La tarea no existe.', ['id: no encontrado']);
-}
-
 $metodo = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$ruta = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$ruta = $ruta_actual;
 $ruta = rtrim($ruta, '/') ?: '/';
-$tareas = leer_tareas();
+$db = conectar_db();
 
 if ($metodo === 'GET' && $ruta === '/tasks') {
     $propias = array_map(
         'datos_publicos',
-        array_filter($tareas, fn (array $tarea): bool => $tarea['usuario_id'] === CURRENT_USER_ID)
+        leer_tareas($db, CURRENT_USER_ID)
     );
     responder(200, array_values($propias));
 }
 
 if ($metodo === 'GET' && str_starts_with($ruta, '/tasks/')) {
     $id = id_de_ruta($ruta);
-    $tarea = null;
-    foreach ($tareas as $elemento) {
-        if ($elemento['id'] === $id) {
-            $tarea = $elemento;
-            break;
-        }
-    }
+    $tarea = buscar_tarea($db, $id);
     if ($tarea === null) {
         error_api(404, 'La tarea no existe.', ['id: no encontrado']);
     }
@@ -170,45 +245,45 @@ if ($metodo === 'GET' && str_starts_with($ruta, '/tasks/')) {
 
 if ($metodo === 'POST' && $ruta === '/tasks') {
     $datos = validar_tarea(leer_json());
-    foreach ($tareas as $tarea) {
-        if ($tarea['usuario_id'] === CURRENT_USER_ID
-            && $tarea['titulo'] === $datos['titulo']
-            && $tarea['fecha_limite'] === $datos['fecha_limite']) {
-            error_api(409, 'La tarea ya existe.', ['titulo y fecha_limite: ya están registrados']);
-        }
+    if (existe_duplicado($db, $datos, CURRENT_USER_ID)) {
+        error_api(409, 'La tarea ya existe.', ['titulo y fecha_limite: ya están registrados']);
     }
 
-    $ids = array_column($tareas, 'id');
-    $nuevo_id = $ids === [] ? 1 : max($ids) + 1;
-    $tarea = ['id' => $nuevo_id, 'usuario_id' => CURRENT_USER_ID, ...$datos];
-    $tareas[] = $tarea;
-    guardar_tareas($tareas);
+    try {
+        $tarea = guardar_tareas($db, $datos, CURRENT_USER_ID);
+    } catch (PDOException $e) {
+        error_api(409, 'La tarea ya existe.', ['titulo y fecha_limite: ya están registrados']);
+    }
     responder(201, datos_publicos($tarea));
 }
 
 if ($metodo === 'PUT' && str_starts_with($ruta, '/tasks/')) {
     $id = id_de_ruta($ruta);
     $datos = validar_tarea(leer_json());
-    $indice = indice_tarea_propia($tareas, $id);
-    foreach ($tareas as $tarea) {
-        if ($tarea['id'] !== $id
-            && $tarea['usuario_id'] === CURRENT_USER_ID
-            && $tarea['titulo'] === $datos['titulo']
-            && $tarea['fecha_limite'] === $datos['fecha_limite']) {
-            error_api(409, 'Ya tienes otra tarea con ese título y fecha.', ['titulo y fecha_limite: ya están registrados']);
-        }
+    $tarea_actual = buscar_tarea($db, $id);
+    if ($tarea_actual === null) {
+        error_api(404, 'La tarea no existe.', ['id: no encontrado']);
+    }
+    if ($tarea_actual['usuario_id'] !== CURRENT_USER_ID) {
+        error_api(403, 'No tienes permiso para modificar esta tarea.', ['id: pertenece a otro usuario']);
+    }
+    if (existe_duplicado($db, $datos, CURRENT_USER_ID, $id)) {
+        error_api(409, 'Ya tienes otra tarea con ese título y fecha.', ['titulo y fecha_limite: ya están registrados']);
     }
 
-    $tareas[$indice] = ['id' => $id, 'usuario_id' => CURRENT_USER_ID, ...$datos];
-    guardar_tareas($tareas);
-    responder(200, datos_publicos($tareas[$indice]));
+    responder(200, datos_publicos(actualizar_tarea($db, $id, $datos)));
 }
 
 if ($metodo === 'DELETE' && str_starts_with($ruta, '/tasks/')) {
     $id = id_de_ruta($ruta);
-    $indice = indice_tarea_propia($tareas, $id);
-    unset($tareas[$indice]);
-    guardar_tareas($tareas);
+    $tarea = buscar_tarea($db, $id);
+    if ($tarea === null) {
+        error_api(404, 'La tarea no existe.', ['id: no encontrado']);
+    }
+    if ($tarea['usuario_id'] !== CURRENT_USER_ID) {
+        error_api(403, 'No tienes permiso para borrar esta tarea.', ['id: pertenece a otro usuario']);
+    }
+    borrar_tarea($db, $id);
     http_response_code(204);
     exit;
 }
