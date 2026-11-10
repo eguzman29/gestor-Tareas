@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 const DATABASE_FILE = __DIR__ . '/tasks.sqlite';
-const CURRENT_USER_ID = 1;
+const JWT_SECRET = 'clave-de-desarrollo-cambiala-en-produccion-2026';
 
 $ruta_actual = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 if (rtrim($ruta_actual, '/') === '/docs') {
@@ -81,8 +81,99 @@ function conectar_db(): PDO
             UNIQUE (usuario_id, titulo, fecha_limite)
         )'
     );
+    $db->exec(
+        'CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario TEXT NOT NULL UNIQUE,
+            clave_hash TEXT NOT NULL,
+            rol TEXT NOT NULL
+        )'
+    );
+    sembrar_usuarios($db);
 
     return $db;
+}
+
+function sembrar_usuarios(PDO $db): void
+{
+    $usuarios = [
+        ['encargado', 'encargado123', 'admin'],
+        ['ana', 'ana12345', 'usuario'],
+        ['beto', 'beto12345', 'usuario'],
+    ];
+    $consulta = $db->prepare(
+        'INSERT OR IGNORE INTO usuarios (usuario, clave_hash, rol) VALUES (?, ?, ?)'
+    );
+    foreach ($usuarios as [$usuario, $clave, $rol]) {
+        $consulta->execute([$usuario, password_hash($clave, PASSWORD_BCRYPT), $rol]);
+    }
+}
+
+function base64url_encode(string $valor): string
+{
+    return rtrim(strtr(base64_encode($valor), '+/', '-_'), '=');
+}
+
+function base64url_decode(string $valor): string|false
+{
+    return base64_decode(strtr($valor, '-_', '+/') . str_repeat('=', (4 - strlen($valor) % 4) % 4), true);
+}
+
+function firmar_jwt(array $datos): string
+{
+    $cabecera = base64url_encode(json_encode(['alg' => 'HS256', 'typ' => 'JWT']));
+    $cuerpo = base64url_encode(json_encode($datos));
+    $firma = base64url_encode(hash_hmac('sha256', "$cabecera.$cuerpo", JWT_SECRET, true));
+    return "$cabecera.$cuerpo.$firma";
+}
+
+function verificar_jwt(string $token): ?array
+{
+    $partes = explode('.', $token);
+    if (count($partes) !== 3) {
+        return null;
+    }
+    $esperada = base64url_encode(hash_hmac('sha256', "$partes[0].$partes[1]", JWT_SECRET, true));
+    if (!hash_equals($esperada, $partes[2])) {
+        return null;
+    }
+    $datos = json_decode(base64url_decode($partes[1]) ?: '', true);
+    if (!is_array($datos) || !isset($datos['sub'], $datos['rol'], $datos['exp']) || $datos['exp'] < time()) {
+        return null;
+    }
+    return $datos;
+}
+
+function usuario_actual(): array
+{
+    $encabezados = function_exists('getallheaders') ? getallheaders() : [];
+    $autorizacion = $_SERVER['HTTP_AUTHORIZATION'] ?? ($encabezados['Authorization'] ?? '');
+    if (!preg_match('/^Bearer\s+(\S+)$/i', $autorizacion, $coincidencias)) {
+        error_api(401, 'Falta el token.', ['Authorization: usa Bearer <token>']);
+    }
+    $datos = verificar_jwt($coincidencias[1]);
+    if ($datos === null) {
+        error_api(401, 'El token no es válido o ya expiró.', ['token: inválido']);
+    }
+    return $datos;
+}
+
+function solo_admin(array $yo): void
+{
+    if ($yo['rol'] !== 'admin') {
+        error_api(403, 'Tu rol no puede hacer esto.', ['rol: permiso insuficiente']);
+    }
+}
+
+function usuario_id(PDO $db, string $nombre): int
+{
+    $consulta = $db->prepare('SELECT id FROM usuarios WHERE usuario = ?');
+    $consulta->execute([$nombre]);
+    $id = $consulta->fetchColumn();
+    if ($id === false) {
+        error_api(401, 'El token no es válido.', ['usuario: no existe']);
+    }
+    return (int) $id;
 }
 
 function leer_tareas(PDO $db, int $usuario_id): array
@@ -95,13 +186,13 @@ function leer_tareas(PDO $db, int $usuario_id): array
     return $consulta->fetchAll();
 }
 
-function buscar_tarea(PDO $db, int $id): ?array
+function buscar_tarea(PDO $db, int $id, int $usuario_id): ?array
 {
     $consulta = $db->prepare(
         'SELECT id, usuario_id, titulo, estado, prioridad, fecha_limite
-         FROM tasks WHERE id = ?'
+         FROM tasks WHERE id = ? AND usuario_id = ?'
     );
-    $consulta->execute([$id]);
+    $consulta->execute([$id, $usuario_id]);
     $tarea = $consulta->fetch();
     return $tarea === false ? null : $tarea;
 }
@@ -135,15 +226,15 @@ function guardar_tareas(PDO $db, array $datos, int $usuario_id): array
         $datos['fecha_limite'],
     ]);
 
-    return buscar_tarea($db, (int) $db->lastInsertId());
+    return buscar_tarea($db, (int) $db->lastInsertId(), $usuario_id);
 }
 
-function actualizar_tarea(PDO $db, int $id, array $datos): array
+function actualizar_tarea(PDO $db, int $id, array $datos, int $usuario_id): array
 {
     $consulta = $db->prepare(
         'UPDATE tasks
          SET titulo = ?, estado = ?, prioridad = ?, fecha_limite = ?
-         WHERE id = ?'
+         WHERE id = ? AND usuario_id = ?'
     );
     $consulta->execute([
         $datos['titulo'],
@@ -151,9 +242,10 @@ function actualizar_tarea(PDO $db, int $id, array $datos): array
         $datos['prioridad'],
         $datos['fecha_limite'],
         $id,
+        $usuario_id,
     ]);
 
-    return buscar_tarea($db, $id);
+    return buscar_tarea($db, $id, $usuario_id);
 }
 
 function borrar_tarea(PDO $db, int $id): void
@@ -251,34 +343,55 @@ $ruta = $ruta_actual;
 $ruta = rtrim($ruta, '/') ?: '/';
 $db = conectar_db();
 
+if ($metodo === 'POST' && $ruta === '/login') {
+    $datos = leer_json();
+    $consulta = $db->prepare('SELECT * FROM usuarios WHERE usuario = ?');
+    $consulta->execute([(string) ($datos['usuario'] ?? '')]);
+    $usuario = $consulta->fetch();
+    if ($usuario === false || !isset($datos['clave']) || !is_string($datos['clave'])
+        || !password_verify($datos['clave'], $usuario['clave_hash'])) {
+        error_api(401, 'Usuario o clave incorrectos.', []);
+    }
+    $ahora = time();
+    responder(200, [
+        'access_token' => firmar_jwt([
+            'sub' => $usuario['usuario'],
+            'rol' => $usuario['rol'],
+            'iat' => $ahora,
+            'exp' => $ahora + 1800,
+        ]),
+        'token_type' => 'bearer',
+    ]);
+}
+
+$yo = usuario_actual();
+$yo_id = usuario_id($db, $yo['sub']);
+
 if ($metodo === 'GET' && $ruta === '/tasks') {
     $propias = array_map(
         'datos_publicos',
-        leer_tareas($db, CURRENT_USER_ID)
+        leer_tareas($db, $yo_id)
     );
     responder(200, array_values($propias));
 }
 
 if ($metodo === 'GET' && str_starts_with($ruta, '/tasks/')) {
     $id = id_de_ruta($ruta);
-    $tarea = buscar_tarea($db, $id);
+    $tarea = buscar_tarea($db, $id, $yo_id);
     if ($tarea === null) {
         error_api(404, 'La tarea no existe.', ['id: no encontrado']);
-    }
-    if ($tarea['usuario_id'] !== CURRENT_USER_ID) {
-        error_api(403, 'No tienes permiso para consultar esta tarea.', ['id: pertenece a otro usuario']);
     }
     responder(200, datos_publicos($tarea));
 }
 
 if ($metodo === 'POST' && $ruta === '/tasks') {
     $datos = validar_tarea(leer_json());
-    if (existe_duplicado($db, $datos, CURRENT_USER_ID)) {
+    if (existe_duplicado($db, $datos, $yo_id)) {
         error_api(409, 'La tarea ya existe.', ['titulo y fecha_limite: ya están registrados']);
     }
 
     try {
-        $tarea = guardar_tareas($db, $datos, CURRENT_USER_ID);
+        $tarea = guardar_tareas($db, $datos, $yo_id);
     } catch (PDOException $e) {
         error_api(409, 'La tarea ya existe.', ['titulo y fecha_limite: ya están registrados']);
     }
@@ -286,30 +399,25 @@ if ($metodo === 'POST' && $ruta === '/tasks') {
 }
 
 if ($metodo === 'PUT' && str_starts_with($ruta, '/tasks/')) {
+    solo_admin($yo);
     $id = id_de_ruta($ruta);
     $datos = validar_tarea(leer_json());
-    $tarea_actual = buscar_tarea($db, $id);
+    $tarea_actual = buscar_tarea($db, $id, $yo_id);
     if ($tarea_actual === null) {
         error_api(404, 'La tarea no existe.', ['id: no encontrado']);
     }
-    if ($tarea_actual['usuario_id'] !== CURRENT_USER_ID) {
-        error_api(403, 'No tienes permiso para modificar esta tarea.', ['id: pertenece a otro usuario']);
-    }
-    if (existe_duplicado($db, $datos, CURRENT_USER_ID, $id)) {
+    if (existe_duplicado($db, $datos, $yo_id, $id)) {
         error_api(409, 'Ya tienes otra tarea con ese título y fecha.', ['titulo y fecha_limite: ya están registrados']);
     }
 
-    responder(200, datos_publicos(actualizar_tarea($db, $id, $datos)));
+    responder(200, datos_publicos(actualizar_tarea($db, $id, $datos, $yo_id)));
 }
 
 if ($metodo === 'DELETE' && str_starts_with($ruta, '/tasks/')) {
     $id = id_de_ruta($ruta);
-    $tarea = buscar_tarea($db, $id);
+    $tarea = buscar_tarea($db, $id, $yo_id);
     if ($tarea === null) {
         error_api(404, 'La tarea no existe.', ['id: no encontrado']);
-    }
-    if ($tarea['usuario_id'] !== CURRENT_USER_ID) {
-        error_api(403, 'No tienes permiso para borrar esta tarea.', ['id: pertenece a otro usuario']);
     }
     borrar_tarea($db, $id);
     http_response_code(204);

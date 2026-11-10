@@ -5,8 +5,13 @@
     "version": "1.0.0",
     "description": "CRUD de tareas con SQLite. Todos los errores responden {\"error\", \"detalles\"}."
   },
+  "security": [{"bearerAuth": []}],
   "servers": [
     {"url": "http://127.0.0.1:8010", "description": "Servidor local PHP"}
+  ],
+  "tags": [
+    {"name": "auth", "description": "Autenticación"},
+    {"name": "tasks", "description": "Tareas del usuario autenticado"}
   ],
   "paths": {
     "/tasks": {
@@ -38,6 +43,21 @@
           "400": {"$ref": "#/components/responses/BadJson"},
           "409": {"$ref": "#/components/responses/Conflict"},
           "422": {"$ref": "#/components/responses/ValidationError"}
+        }
+      }
+    },
+    "/login": {
+      "post": {
+        "security": [],
+        "tags": ["auth"],
+        "summary": "Iniciar sesión",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Credenciales"}}}
+        },
+        "responses": {
+          "200": {"description": "Token JWT generado"},
+          "401": {"$ref": "#/components/responses/Unauthorized"}
         }
       }
     },
@@ -92,7 +112,22 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
     "schemas": {
+      "Credenciales": {
+        "type": "object",
+        "required": ["usuario", "clave"],
+        "properties": {
+          "usuario": {"type": "string", "example": "ana"},
+          "clave": {"type": "string", "format": "password", "example": "ana12345"}
+        }
+      },
       "TaskNuevo": {
         "type": "object",
         "required": ["titulo", "estado", "prioridad", "fecha_limite"],
@@ -119,6 +154,8 @@
       }
     },
     "responses": {
+      "Unauthorized": {"description": "Falta el token o las credenciales no son válidas", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
+      "Forbidden": {"description": "El rol no tiene permiso", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
       "BadJson": {"description": "El cuerpo no es un JSON válido", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
       "ValidationError": {"description": "Los datos o el id no cumplen las reglas", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
       "NotFound": {"description": "La tarea no existe", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},

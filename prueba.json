@@ -7,7 +7,7 @@
     "titulo": "Entregar practica",
     "estado": "pendiente",
     "prioridad": 3,
-    "fecha_limite": "2026-11-06"
+    "fecha_limite": "2026-11-12"
   },
   "invalido": {
     "titulo": "",
@@ -20,8 +20,25 @@
     "titulo": "Entregar practica corregida",
     "estado": "en_progreso",
     "prioridad": 4,
-    "fecha_limite": "2026-11-07"
+    "fecha_limite": "2026-11-13"
   },
   "id_inexistente": "999999",
-  "encabezados": {}
+  "encabezados": {},
+  "openapi": "/openapi.json",
+  "auth": {
+    "login": "/login",
+    "campo_token": "access_token",
+    "admin": {"usuario": "encargado", "clave": "encargado123"},
+    "usuario": {"usuario": "ana", "clave": "ana12345"},
+    "otro": {"usuario": "beto", "clave": "beto12345"}
+  },
+  "propio": {
+    "coleccion": "/tasks",
+    "valido": {
+      "titulo": "Tarea propia de Ana",
+      "estado": "pendiente",
+      "prioridad": 2,
+      "fecha_limite": "2026-11-14"
+    }
+  }
 }
