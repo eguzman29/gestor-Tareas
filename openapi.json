@@ -20,9 +20,10 @@
         "summary": "Listar tareas",
         "responses": {
           "200": {
-            "description": "Lista de tareas del usuario actual",
+            "description": "Lista de tareas del usuario actual (el admin ve todas)",
             "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Task"}}}}
           },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
           "404": {"$ref": "#/components/responses/NotFound"},
           "422": {"$ref": "#/components/responses/ValidationError"}
         }
@@ -41,6 +42,7 @@
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Task"}}}
           },
           "400": {"$ref": "#/components/responses/BadJson"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
           "409": {"$ref": "#/components/responses/Conflict"},
           "422": {"$ref": "#/components/responses/ValidationError"}
         }
@@ -77,6 +79,7 @@
             "description": "Tarea encontrada",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Task"}}}
           },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
           "404": {"$ref": "#/components/responses/NotFound"},
           "422": {"$ref": "#/components/responses/ValidationError"}
         }
@@ -84,7 +87,7 @@
       "put": {
         "tags": ["tasks"],
         "summary": "Reemplazar tarea",
-        "description": "Reemplaza todos los campos de la tarea. Es idempotente.",
+        "description": "Reemplaza todos los campos de la tarea. Es idempotente. Solo admin.",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskNuevo"}}}
@@ -95,6 +98,28 @@
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Task"}}}
           },
           "400": {"$ref": "#/components/responses/BadJson"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "403": {"$ref": "#/components/responses/Forbidden"},
+          "404": {"$ref": "#/components/responses/NotFound"},
+          "409": {"$ref": "#/components/responses/Conflict"},
+          "422": {"$ref": "#/components/responses/ValidationError"}
+        }
+      },
+      "patch": {
+        "tags": ["tasks"],
+        "summary": "Cambiar parte de la tarea",
+        "description": "Cambia solo los campos enviados. El usuario solo cambia lo suyo; el admin cualquiera.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TaskCambio"}}}
+        },
+        "responses": {
+          "200": {
+            "description": "Tarea actualizada",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Task"}}}
+          },
+          "400": {"$ref": "#/components/responses/BadJson"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
           "404": {"$ref": "#/components/responses/NotFound"},
           "409": {"$ref": "#/components/responses/Conflict"},
           "422": {"$ref": "#/components/responses/ValidationError"}
@@ -105,6 +130,7 @@
         "summary": "Borrar tarea",
         "responses": {
           "204": {"description": "Tarea borrada sin cuerpo"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
           "404": {"$ref": "#/components/responses/NotFound"},
           "422": {"$ref": "#/components/responses/ValidationError"}
         }
@@ -136,6 +162,15 @@
           "estado": {"type": "string", "enum": ["pendiente", "en_progreso", "terminada"], "example": "pendiente"},
           "prioridad": {"type": "integer", "minimum": 1, "maximum": 5, "example": 3},
           "fecha_limite": {"type": "string", "format": "date", "description": "AAAA-MM-DD y no anterior a hoy", "example": "2026-11-06"}
+        }
+      },
+      "TaskCambio": {
+        "type": "object",
+        "properties": {
+          "titulo": {"type": "string", "minLength": 3, "maxLength": 100, "example": "Entregar practica corregida"},
+          "estado": {"type": "string", "enum": ["pendiente", "en_progreso", "terminada"], "example": "terminada"},
+          "prioridad": {"type": "integer", "minimum": 1, "maximum": 5, "example": 4},
+          "fecha_limite": {"type": "string", "format": "date", "description": "AAAA-MM-DD y no anterior a hoy", "example": "2026-11-13"}
         }
       },
       "Task": {
