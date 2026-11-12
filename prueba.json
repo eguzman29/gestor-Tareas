@@ -1,5 +1,5 @@
 {
-  "matricula": "20207889",
+  "matricula": "20205276",
   "base": "http://127.0.0.1:8010",
   "coleccion": "/tasks",
   "campo_id": "id",
@@ -7,7 +7,7 @@
     "titulo": "Entregar practica",
     "estado": "pendiente",
     "prioridad": 3,
-    "fecha_limite": "2026-11-12"
+    "fecha_limite": "2026-12-15"
   },
   "invalido": {
     "titulo": "",
@@ -20,7 +20,7 @@
     "titulo": "Entregar practica corregida",
     "estado": "en_progreso",
     "prioridad": 4,
-    "fecha_limite": "2026-11-13"
+    "fecha_limite": "2026-12-16"
   },
   "id_inexistente": "999999",
   "encabezados": {},
@@ -28,9 +28,18 @@
   "auth": {
     "login": "/login",
     "campo_token": "access_token",
-    "admin": {"usuario": "encargado", "clave": "encargado123"},
-    "usuario": {"usuario": "ana", "clave": "ana12345"},
-    "otro": {"usuario": "beto", "clave": "beto12345"}
+    "admin": {
+      "usuario": "encargado",
+      "clave": "encargado123"
+    },
+    "usuario": {
+      "usuario": "ana",
+      "clave": "ana12345"
+    },
+    "otro": {
+      "usuario": "beto",
+      "clave": "beto12345"
+    }
   },
   "propio": {
     "coleccion": "/tasks",
@@ -38,7 +47,16 @@
       "titulo": "Tarea propia de Ana",
       "estado": "pendiente",
       "prioridad": 2,
-      "fecha_limite": "2026-11-14"
+      "fecha_limite": "2026-12-17"
     }
+  },
+  "externo": {
+    "metodo": "POST",
+    "ruta": "/tareas/prioridad",
+    "cuerpo": {
+      "titulo": "Entregar el reporte de practicas hoy mismo"
+    },
+    "token": "admin",
+    "real": ""
   }
 }

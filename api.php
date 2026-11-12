@@ -356,6 +356,48 @@ function id_de_ruta(string $ruta): int
     return (int) $texto_id;
 }
 
+// ---------- Sesión 5: preguntarle algo a la IA (Gemini) ----------
+const INSTRUCCION_IA = 'Eres un asistente de productividad. Para la tarea que te doy, responde SOLO un JSON con la forma {"prioridad": "alta" | "media" | "baja", "razon": "máximo 15 palabras en español"}.' . "\n" . 'Tarea: ';
+
+function preguntar_a_la_ia(string $instruccion): array
+{
+    $url = getenv('EXTERNO_URL') ?: 'https://generativelanguage.googleapis.com';  // en pruebas: el simulador
+    $modelo = getenv('GEMINI_MODELO') ?: 'gemini-flash-lite-latest';
+    $clave = getenv('GEMINI_API_KEY') ?: '';                 // IDEA 3: la clave NO va en el código
+    if ($clave === '' && str_contains($url, 'googleapis.com')) {
+        error_api(503, 'Falta configurar la variable de entorno GEMINI_API_KEY.', ['GEMINI_API_KEY: no definida']);
+    }
+    $ch = curl_init("$url/v1beta/models/$modelo:generateContent");   // IDEA 1: nuestra API llama a otra API
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 5,                                // IDEA 2: máximo 5 segundos esperando
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', "x-goog-api-key: $clave"],
+        CURLOPT_POSTFIELDS => json_encode([
+            'contents' => [['parts' => [['text' => $instruccion]]]],
+            'generationConfig' => ['responseMimeType' => 'application/json', 'temperature' => 0],
+        ]),
+    ]);
+    $texto = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $estado = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    if ($errno === CURLE_OPERATION_TIMEDOUT) {
+        error_api(504, 'La IA tardó demasiado en responder. Intenta en un momento.', []);
+    }
+    if ($errno) {
+        error_api(502, 'No se pudo conectar con la IA.', []);
+    }
+    if ($estado >= 400) {
+        error_api(502, "La IA no está disponible (respondió $estado). Intenta más tarde.", []);
+    }
+    $respuesta = json_decode((string) $texto, true);
+    $ia = json_decode($respuesta['candidates'][0]['content']['parts'][0]['text'] ?? '', true);
+    if (!is_array($ia)) {
+        error_api(502, 'La IA respondió algo que no entendemos.', []);
+    }
+    return $ia;
+}
+
 $metodo = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $ruta = $ruta_actual;
 $ruta = rtrim($ruta, '/') ?: '/';
@@ -458,6 +500,20 @@ if ($metodo === 'DELETE' && str_starts_with($ruta, '/tasks/')) {
     borrar_tarea($db, $id, (int) $tarea['usuario_id']);
     http_response_code(204);
     exit;
+}
+
+if ($metodo === 'POST' && $ruta === '/tareas/prioridad') {
+    $datos = leer_json();
+    $titulo = $datos['titulo'] ?? null;
+    if (!is_string($titulo) || mb_strlen(trim($titulo)) < 3 || mb_strlen($titulo) > 100) {
+        error_api(422, 'Los datos no son válidos.', ['titulo: de 3 a 100 caracteres']);
+    }
+    $ia = preguntar_a_la_ia(INSTRUCCION_IA . $titulo);   // a la IA solo le mandamos el título
+    // Nunca confíen en lo que responde la IA: revisen que trae lo que pidieron
+    if (!in_array($ia['prioridad'] ?? null, ['alta', 'media', 'baja'], true) || empty($ia['razon'])) {
+        error_api(502, 'La IA respondió algo inesperado.', []);
+    }
+    responder(200, ['prioridad' => $ia['prioridad'], 'razon' => mb_substr((string) $ia['razon'], 0, 200)]);
 }
 
 if (str_starts_with($ruta, '/tasks')) {
