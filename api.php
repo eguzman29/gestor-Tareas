@@ -60,6 +60,70 @@ function error_api(int $codigo, string $mensaje, array $detalles = []): never
     responder($codigo, ['error' => $mensaje, 'detalles' => $detalles]);
 }
 
+function longitud_texto(string $texto): int
+{
+    return function_exists('mb_strlen') ? mb_strlen($texto) : strlen($texto);
+}
+
+function recortar_texto(string $texto, int $limite): string
+{
+    return function_exists('mb_substr') ? mb_substr($texto, 0, $limite) : substr($texto, 0, $limite);
+}
+
+function preguntar_a_la_ia(string $instruccion): array
+{
+    $url = rtrim(getenv('EXTERNO_URL') ?: 'https://generativelanguage.googleapis.com', '/');
+    $modelo = getenv('GEMINI_MODELO') ?: 'gemini-flash-lite-latest';
+    $clave = getenv('GEMINI_API_KEY') ?: '';
+    if (!function_exists('curl_init')) {
+        error_api(503, 'La integración con IA no está disponible.', ['servidor: falta la extensión cURL de PHP']);
+    }
+    if ($clave === '' && str_contains($url, 'googleapis.com')) {
+        error_api(503, 'Falta configurar la variable GEMINI_API_KEY.', []);
+    }
+
+    $peticion = json_encode([
+        'contents' => [['parts' => [['text' => $instruccion]]]],
+        'generationConfig' => ['responseMimeType' => 'application/json', 'temperature' => 0],
+    ]);
+    for ($intento = 0; $intento < 2; $intento++) {
+        $ch = curl_init("$url/v1beta/models/$modelo:generateContent");
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 5,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', "x-goog-api-key: $clave"],
+            CURLOPT_POSTFIELDS => $peticion,
+        ]);
+        $texto = curl_exec($ch);
+        $errno = curl_errno($ch);
+        $estado = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($intento === 0 && in_array($estado, [429, 503], true)) {
+            continue;
+        }
+        break;
+    }
+
+    if ($errno === CURLE_OPERATION_TIMEDOUT) {
+        error_api(504, 'La IA tardó demasiado en responder.', []);
+    }
+    if ($errno !== 0) {
+        error_api(502, 'No se pudo conectar con la IA.', []);
+    }
+    if ($estado >= 400) {
+        error_api(502, "La IA no está disponible (respondió $estado).", []);
+    }
+
+    $respuesta = json_decode($texto ?: '', true);
+    $contenido = $respuesta['candidates'][0]['content']['parts'][0]['text'] ?? '';
+    $ia = json_decode($contenido, true);
+    if (!is_array($ia)) {
+        error_api(502, 'La IA respondió algo que no entendemos.', []);
+    }
+    return $ia;
+}
+
 function conectar_db(): PDO
 {
     static $db = null;
@@ -366,6 +430,29 @@ if ($metodo === 'POST' && $ruta === '/login') {
 
 $yo = usuario_actual();
 $yo_id = usuario_id($db, $yo['sub']);
+
+if ($metodo === 'POST' && $ruta === '/reportes') {
+    $datos = leer_json();
+    $descripcion = $datos['descripcion'] ?? null;
+    if (!is_string($descripcion) || longitud_texto(trim($descripcion)) < 2 || longitud_texto($descripcion) > 300) {
+        error_api(422, 'Los datos no son válidos.', ['descripcion: debe tener de 2 a 300 caracteres']);
+    }
+
+    $instruccion = 'Analiza esta descripción de una tarea y responde únicamente con un JSON válido, sin markdown, '
+        . 'usando exactamente esta forma: {"resumen":"texto breve","prioridad":"baja|media|alta"}. '
+        . 'La prioridad solo puede ser "baja", "media" o "alta". '
+        . "Descripción: $descripcion";
+    $ia = preguntar_a_la_ia($instruccion);
+    $prioridad = $ia['prioridad'] ?? $ia['gravedad'] ?? null;
+    if (!isset($ia['resumen']) || !is_string($ia['resumen'])
+        || !in_array($prioridad, ['baja', 'media', 'alta'], true)) {
+        error_api(502, 'La IA respondió algo inesperado.', []);
+    }
+    responder(200, [
+        'resumen' => recortar_texto($ia['resumen'], 200),
+        'prioridad' => $prioridad,
+    ]);
+}
 
 if ($metodo === 'GET' && $ruta === '/tasks') {
     $propias = array_map(

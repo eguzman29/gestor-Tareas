@@ -7,7 +7,7 @@
     "titulo": "Entregar practica",
     "estado": "pendiente",
     "prioridad": 3,
-    "fecha_limite": "2026-11-12"
+    "fecha_limite": "2026-11-20"
   },
   "invalido": {
     "titulo": "",
@@ -20,7 +20,7 @@
     "titulo": "Entregar practica corregida",
     "estado": "en_progreso",
     "prioridad": 4,
-    "fecha_limite": "2026-11-13"
+    "fecha_limite": "2026-11-21"
   },
   "id_inexistente": "999999",
   "encabezados": {},
@@ -38,7 +38,16 @@
       "titulo": "Tarea propia de Ana",
       "estado": "pendiente",
       "prioridad": 2,
-      "fecha_limite": "2026-11-14"
+      "fecha_limite": "2026-11-22"
     }
+  },
+  "externo": {
+    "metodo": "POST",
+    "ruta": "/reportes",
+    "cuerpo": {
+      "descripcion": "La tarea de entregar el reporte vence pronto y requiere revision"
+    },
+    "token": "admin",
+    "real": ""
   }
 }

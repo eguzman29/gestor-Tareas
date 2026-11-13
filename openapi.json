@@ -61,6 +61,28 @@
         }
       }
     },
+    "/reportes": {
+      "post": {
+        "tags": ["tasks"],
+        "summary": "Analizar una tarea con IA",
+        "description": "Envía la descripción a Gemini. La API limita la espera y convierte los fallos externos en errores JSON.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReporteEntrada"}}}
+        },
+        "responses": {
+          "200": {
+            "description": "Análisis generado",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReporteSalida"}}}
+          },
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "422": {"$ref": "#/components/responses/ValidationError"},
+          "502": {"$ref": "#/components/responses/BadGateway"},
+          "503": {"$ref": "#/components/responses/ServiceUnavailable"},
+          "504": {"$ref": "#/components/responses/GatewayTimeout"}
+        }
+      }
+    },
     "/tasks/{id}": {
       "parameters": [{
         "name": "id",
@@ -128,6 +150,21 @@
           "clave": {"type": "string", "format": "password", "example": "ana12345"}
         }
       },
+      "ReporteEntrada": {
+        "type": "object",
+        "required": ["descripcion"],
+        "properties": {
+          "descripcion": {"type": "string", "minLength": 2, "maxLength": 300, "example": "La tarea vence pronto"}
+        }
+      },
+      "ReporteSalida": {
+        "type": "object",
+        "required": ["resumen", "prioridad"],
+        "properties": {
+          "resumen": {"type": "string", "example": "Revisar y entregar la tarea pronto"},
+          "prioridad": {"type": "string", "enum": ["baja", "media", "alta"], "example": "alta"}
+        }
+      },
       "TaskNuevo": {
         "type": "object",
         "required": ["titulo", "estado", "prioridad", "fecha_limite"],
@@ -160,6 +197,9 @@
       "ValidationError": {"description": "Los datos o el id no cumplen las reglas", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
       "NotFound": {"description": "La tarea no existe", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}},
       "Conflict": {"description": "Ya existe una tarea con el mismo título y fecha", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+      ,"BadGateway": {"description": "La IA no está disponible o respondió de forma inválida", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+      ,"ServiceUnavailable": {"description": "Falta configurar la integración con IA", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
+      ,"GatewayTimeout": {"description": "La IA excedió el tiempo máximo", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}
     }
   }
 }
