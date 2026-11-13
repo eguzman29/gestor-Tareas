@@ -2,3 +2,4 @@ tasks_data.json
 tasks.sqlite
 reporte_U3S2_*.txt
 __pycache__/
+.env
