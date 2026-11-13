@@ -442,14 +442,21 @@ function preguntar_prioridad_a_la_ia(string $instruccion): array
             'generationConfig' => ['responseMimeType' => 'application/json', 'temperature' => 0],
         ]),
     ]);
-    $texto = curl_exec($ch);
-    $errno = curl_errno($ch);
-    $estado = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    if ($errno === CURLE_OPERATION_TIMEDOUT) {
-        error_api(504, 'La IA tardó demasiado en responder. Intenta en un momento.', []);
-    }
-    if ($errno) {
-        error_api(502, 'No se pudo conectar con la IA.', []);
+    // Nivel 2: reintentar solo fallas pasajeras (429 y 5xx), con espera creciente
+    for ($intento = 1; $intento <= 3; $intento++) {
+        $texto = curl_exec($ch);
+        $errno = curl_errno($ch);
+        $estado = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        if ($errno === CURLE_OPERATION_TIMEDOUT) {
+            error_api(504, 'La IA tardó demasiado en responder. Intenta en un momento.', []);
+        }
+        if ($errno) {
+            error_api(502, 'No se pudo conectar con la IA.', []);
+        }
+        if (!in_array($estado, [429, 500, 502, 503, 504], true) || $intento === 3) {
+            break;                                           // éxito, o un error que no se arregla solo (400, 404...)
+        }
+        usleep((int) (500000 * 2 ** ($intento - 1)));        // espera 0.5 s, luego 1 s
     }
     if ($estado >= 400) {
         error_api(502, "La IA no está disponible (respondió $estado). Intenta más tarde.", []);
