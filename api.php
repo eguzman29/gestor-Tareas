@@ -6,6 +6,23 @@ const DATABASE_FILE = __DIR__ . '/tasks.sqlite';
 const JWT_SECRET = 'clave-de-desarrollo-cambiala-en-produccion-2026';
 
 $ruta_actual = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$origen_permitido = getenv('CORS_ORIGIN') ?: 'http://127.0.0.1:5500';
+$origen_solicitado = $_SERVER['HTTP_ORIGIN'] ?? '';
+if ($origen_solicitado === $origen_permitido) {
+    header("Access-Control-Allow-Origin: $origen_permitido");
+    header('Vary: Origin');
+    header('Access-Control-Allow-Headers: Authorization, Content-Type');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+}
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
+    if ($origen_solicitado !== $origen_permitido) {
+        http_response_code(403);
+        exit;
+    }
+    http_response_code(204);
+    exit;
+}
+
 if (rtrim($ruta_actual, '/') === '/docs') {
     header('Content-Type: text/html; charset=utf-8');
     echo <<<'HTML'
@@ -439,8 +456,8 @@ if ($metodo === 'POST' && $ruta === '/reportes') {
     }
 
     $instruccion = 'Analiza esta descripción de una tarea y responde únicamente con un JSON válido, sin markdown, '
-        . 'usando exactamente esta forma: {"resumen":"texto breve","prioridad":"baja|media|alta"}. '
-        . 'La prioridad solo puede ser "baja", "media" o "alta". '
+        . 'usando exactamente esta forma: {"gravedad": "alta" | "media" | "baja", "resumen": "texto breve"}. '
+        . 'La gravedad solo puede ser "baja", "media" o "alta". '
         . "Descripción: $descripcion";
     $ia = preguntar_a_la_ia($instruccion);
     $prioridad = $ia['prioridad'] ?? $ia['gravedad'] ?? null;
