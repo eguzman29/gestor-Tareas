@@ -6,6 +6,24 @@ const DATABASE_FILE = __DIR__ . '/tasks.sqlite';
 define('JWT_SECRET', getenv('JWT_SECRET') ?: 'clave-de-desarrollo-cambiala-en-produccion-2026');
 
 $ruta_actual = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+$origenes_permitidos = array_map('trim', explode(',', getenv('CORS_ORIGIN') ?: 'http://127.0.0.1:5500,http://localhost:5500'));
+$origen_solicitado = $_SERVER['HTTP_ORIGIN'] ?? '';
+$origen_valido = in_array($origen_solicitado, $origenes_permitidos, true);
+if ($origen_valido) {
+    header("Access-Control-Allow-Origin: $origen_solicitado");
+    header('Vary: Origin');
+    header('Access-Control-Allow-Headers: Authorization, Content-Type');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
+}
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'OPTIONS') {
+    if (!$origen_valido) {
+        http_response_code(403);
+        exit;
+    }
+    http_response_code(204);
+    exit;
+}
+
 if (rtrim($ruta_actual, '/') === '/docs') {
     header('Content-Type: text/html; charset=utf-8');
     echo <<<'HTML'
@@ -507,8 +525,8 @@ if ($metodo === 'POST' && $ruta === '/reportes') {
     }
 
     $instruccion = 'Analiza esta descripción de una tarea y responde únicamente con un JSON válido, sin markdown, '
-        . 'usando exactamente esta forma: {"resumen":"texto breve","prioridad":"baja|media|alta"}. '
-        . 'La prioridad solo puede ser "baja", "media" o "alta". '
+        . 'usando exactamente esta forma: {"gravedad": "alta" | "media" | "baja", "resumen": "texto breve"}. '
+        . 'La gravedad solo puede ser "baja", "media" o "alta". '
         . "Descripción: $descripcion";
     $ia = preguntar_a_la_ia($instruccion);
     $prioridad = $ia['prioridad'] ?? $ia['gravedad'] ?? null;

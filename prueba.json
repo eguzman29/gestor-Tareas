@@ -58,5 +58,8 @@
     },
     "token": "admin",
     "real": ""
+  },
+  "cors": {
+    "origen": "http://127.0.0.1:5500"
   }
 }
