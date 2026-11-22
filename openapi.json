@@ -3,7 +3,7 @@
   "info": {
     "title": "Gestor personal de tareas",
     "version": "1.0.0",
-    "description": "CRUD de tareas con SQLite. Todos los errores responden {\"error\", \"detalles\"}."
+    "description": "CRUD de tareas con SQLite, login con JWT y dos endpoints con IA (Gemini). Todos los errores responden {\"error\", \"detalles\"}. Si falta la variable JWT_SECRET, cualquier ruta responde 503; un error inesperado responde 500 sin trazas. Catálogo completo en docs/errores.md."
   },
   "security": [{"bearerAuth": []}],
   "servers": [
@@ -11,7 +11,8 @@
   ],
   "tags": [
     {"name": "auth", "description": "Autenticación"},
-    {"name": "tasks", "description": "Tareas del usuario autenticado"}
+    {"name": "tasks", "description": "Tareas del usuario autenticado"},
+    {"name": "ia", "description": "Ayuda de la IA (Gemini). Timeout de 5 s y reintentos solo ante fallas pasajeras"}
   ],
   "paths": {
     "/tasks": {
@@ -23,9 +24,7 @@
             "description": "Lista de tareas del usuario actual (el admin ve todas)",
             "content": {"application/json": {"schema": {"type": "array", "items": {"$ref": "#/components/schemas/Task"}}}}
           },
-          "401": {"$ref": "#/components/responses/Unauthorized"},
-          "404": {"$ref": "#/components/responses/NotFound"},
-          "422": {"$ref": "#/components/responses/ValidationError"}
+          "401": {"$ref": "#/components/responses/Unauthorized"}
         }
       },
       "post": {
@@ -58,16 +57,21 @@
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Credenciales"}}}
         },
         "responses": {
-          "200": {"description": "Token JWT generado"},
-          "401": {"$ref": "#/components/responses/Unauthorized"}
+          "200": {
+            "description": "Token JWT generado (HS256, vence en 30 minutos)",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Token"}}}
+          },
+          "400": {"$ref": "#/components/responses/BadJson"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "422": {"$ref": "#/components/responses/ValidationError"}
         }
       }
     },
     "/reportes": {
       "post": {
-        "tags": ["tasks"],
+        "tags": ["ia"],
         "summary": "Analizar una tarea con IA",
-        "description": "Envía la descripción a Gemini. La API limita la espera y convierte los fallos externos en errores JSON.",
+        "description": "Envía la descripción a Gemini, que le asigna prioridad (alta, media o baja) y la resume. Timeout de 5 s; 2 intentos, reintenta solo 429 y 503.",
         "requestBody": {
           "required": true,
           "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReporteEntrada"}}}
@@ -77,6 +81,30 @@
             "description": "Análisis generado",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReporteSalida"}}}
           },
+          "400": {"$ref": "#/components/responses/BadJson"},
+          "401": {"$ref": "#/components/responses/Unauthorized"},
+          "422": {"$ref": "#/components/responses/ValidationError"},
+          "502": {"$ref": "#/components/responses/BadGateway"},
+          "503": {"$ref": "#/components/responses/ServiceUnavailable"},
+          "504": {"$ref": "#/components/responses/GatewayTimeout"}
+        }
+      }
+    },
+    "/tareas/prioridad": {
+      "post": {
+        "tags": ["ia"],
+        "summary": "Sugerir la prioridad de una tarea con IA",
+        "description": "Envía solo el título a Gemini, que sugiere una prioridad (alta, media o baja) y una razón corta. No guarda nada. Timeout de 5 s; hasta 3 intentos, reintenta 429, 500, 502, 503 y 504 esperando 0.5 s y 1 s. El timeout no se reintenta.",
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PrioridadEntrada"}}}
+        },
+        "responses": {
+          "200": {
+            "description": "Prioridad sugerida",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/PrioridadSalida"}}}
+          },
+          "400": {"$ref": "#/components/responses/BadJson"},
           "401": {"$ref": "#/components/responses/Unauthorized"},
           "422": {"$ref": "#/components/responses/ValidationError"},
           "502": {"$ref": "#/components/responses/BadGateway"},
@@ -176,6 +204,29 @@
           "clave": {"type": "string", "format": "password", "example": "ana12345"}
         }
       },
+      "Token": {
+        "type": "object",
+        "required": ["access_token", "token_type"],
+        "properties": {
+          "access_token": {"type": "string", "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."},
+          "token_type": {"type": "string", "example": "bearer"}
+        }
+      },
+      "PrioridadEntrada": {
+        "type": "object",
+        "required": ["titulo"],
+        "properties": {
+          "titulo": {"type": "string", "minLength": 3, "maxLength": 100, "example": "Entregar el reporte de practicas hoy mismo"}
+        }
+      },
+      "PrioridadSalida": {
+        "type": "object",
+        "required": ["prioridad", "razon"],
+        "properties": {
+          "prioridad": {"type": "string", "enum": ["alta", "media", "baja"], "example": "alta"},
+          "razon": {"type": "string", "maxLength": 200, "example": "Vence hoy y es una entrega académica."}
+        }
+      },
       "ReporteEntrada": {
         "type": "object",
         "required": ["descripcion"],
@@ -198,7 +249,7 @@
           "titulo": {"type": "string", "minLength": 3, "maxLength": 100, "example": "Entregar practica"},
           "estado": {"type": "string", "enum": ["pendiente", "en_progreso", "terminada"], "example": "pendiente"},
           "prioridad": {"type": "integer", "minimum": 1, "maximum": 5, "example": 3},
-          "fecha_limite": {"type": "string", "format": "date", "description": "AAAA-MM-DD y no anterior a hoy", "example": "2026-11-06"}
+          "fecha_limite": {"type": "string", "format": "date", "description": "AAAA-MM-DD y no anterior a hoy", "example": "2026-12-15"}
         }
       },
       "TaskCambio": {
@@ -207,7 +258,7 @@
           "titulo": {"type": "string", "minLength": 3, "maxLength": 100, "example": "Entregar practica corregida"},
           "estado": {"type": "string", "enum": ["pendiente", "en_progreso", "terminada"], "example": "terminada"},
           "prioridad": {"type": "integer", "minimum": 1, "maximum": 5, "example": 4},
-          "fecha_limite": {"type": "string", "format": "date", "description": "AAAA-MM-DD y no anterior a hoy", "example": "2026-11-13"}
+          "fecha_limite": {"type": "string", "format": "date", "description": "AAAA-MM-DD y no anterior a hoy", "example": "2026-12-16"}
         }
       },
       "Task": {
