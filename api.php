@@ -3,7 +3,17 @@
 declare(strict_types=1);
 
 const DATABASE_FILE = __DIR__ . '/tasks.sqlite';
-define('JWT_SECRET', getenv('JWT_SECRET') ?: 'clave-de-desarrollo-cambiala-en-produccion-2026');
+
+// Errores inesperados: se registran en la consola del servidor y el cliente solo recibe un 500 en JSON, sin trazas
+ini_set('display_errors', '0');
+set_exception_handler(function (Throwable $e): void {
+    error_log((string) $e);
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+    }
+    echo json_encode(['error' => 'Error interno del servidor.', 'detalles' => []], JSON_UNESCAPED_UNICODE);
+});
 
 $ruta_actual = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $origenes_permitidos = array_map('trim', explode(',', getenv('CORS_ORIGIN') ?: 'http://127.0.0.1:5500,http://localhost:5500'));
@@ -53,18 +63,23 @@ HTML;
 }
 
 if (rtrim($ruta_actual, '/') === '/openapi.json') {
-    $nombre_contrato = 'openapi.json';
-    $contrato = file_get_contents(__DIR__ . '/' . $nombre_contrato);
+    header('Content-Type: application/json; charset=utf-8');
+    $contrato = @file_get_contents(__DIR__ . '/openapi.json');
     if ($contrato === false) {
-        http_response_code(500);
-        exit('No se pudo leer el contrato OpenAPI.');
+        error_api(500, 'No se pudo leer el contrato OpenAPI.', []);
     }
-    header('Content-Type: ' . ($nombre_contrato === 'openapi.json' ? 'application/json' : 'application/yaml') . '; charset=utf-8');
     echo $contrato;
     exit;
 }
 
 header('Content-Type: application/json; charset=utf-8');
+
+// El secreto de los tokens sale solo de la variable de entorno: no hay ninguno escrito en el código
+$jwt_secret = getenv('JWT_SECRET');
+if ($jwt_secret === false || $jwt_secret === '') {
+    error_api(503, 'Falta configurar la variable de entorno JWT_SECRET.', []);
+}
+define('JWT_SECRET', $jwt_secret);
 
 function responder(int $codigo, mixed $cuerpo): never
 {

@@ -5,3 +5,8 @@ __pycache__/
 .env
 clase-s5/
 clase-s7/
+.DS_Store
+.persistencia_*
+reporte_U3S*.txt
+!reporte_U3S6_*.txt
+salida_U3S*.txt
