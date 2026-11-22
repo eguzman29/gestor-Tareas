@@ -48,6 +48,26 @@ paths:
         "401": {$ref: "#/components/responses/SinToken"}
         "409": {$ref: "#/components/responses/Conflicto"}
         "422": {$ref: "#/components/responses/DatosInvalidos"}
+  "/reportes":
+    post:
+      summary: "Analizar una tarea con IA"
+      description: "Envía la descripción a Gemini. La API limita la espera y convierte los fallos externos en errores JSON."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ReporteEntrada"}
+      responses:
+        "200":
+          description: "Análisis generado"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ReporteSalida"}
+        "401": {$ref: "#/components/responses/SinToken"}
+        "422": {$ref: "#/components/responses/DatosInvalidos"}
+        "502": {$ref: "#/components/responses/FallaIa"}
+        "503": {$ref: "#/components/responses/IaNoDisponible"}
+        "504": {$ref: "#/components/responses/IaTimeout"}
   "/tasks/{id}":
     parameters:
       - name: id
@@ -121,6 +141,26 @@ components:
       properties:
         usuario: {type: string}
         clave: {type: string, format: password}
+    ReporteEntrada:
+      type: object
+      required: ["descripcion"]
+      properties:
+        descripcion:
+          type: string
+          minLength: 2
+          maxLength: 300
+          example: "La tarea vence pronto"
+    ReporteSalida:
+      type: object
+      required: ["resumen", "prioridad"]
+      properties:
+        resumen:
+          type: string
+          example: "Revisar y entregar la tarea pronto"
+        prioridad:
+          type: string
+          enum: ["baja", "media", "alta"]
+          example: "alta"
     TaskNuevo:
       type: object
       required: ["titulo", "estado", "prioridad", "fecha_limite"]
@@ -191,6 +231,21 @@ components:
           schema: {$ref: "#/components/schemas/Error"}
     SinPermiso:
       description: "El rol no tiene permiso"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    FallaIa:
+      description: "La IA respondió un error o no se pudo conectar"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    IaNoDisponible:
+      description: "Falta configurar la variable GEMINI_API_KEY"
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    IaTimeout:
+      description: "La IA tardó demasiado en responder (timeout)"
       content:
         application/json:
           schema: {$ref: "#/components/schemas/Error"}
