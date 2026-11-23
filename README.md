@@ -260,7 +260,9 @@ Nuestra API es REST: cada recurso tiene su ruta (`/tasks`, `/tasks/7`), el méto
 | Said López Jr. | `PUT` y `DELETE`, revisión de seguridad (permisos del admin, `PATCH`, filtro por dueño), `POST /tareas/prioridad` con IA, timeout y reintentos, lista de orígenes de CORS, `JWT_SECRET` obligatorio y errores 500 sin trazas, corrección de `.env.example`, del catálogo de errores y del contrato, arquitectura C4 y decisiones (ADR) |
 | Jonathan Flores | Revisión de código y fusión de pull requests, README, CHANGELOG y párrafo de REST y SOAP |
 
-**Ethan Carbajal:** [COMPLETAR: ¿qué pieza te costó más y por qué? ¿Qué harías distinto si este proyecto fuera de una empresa?]
+**Ethan Carbajal:** La pieza que me costo mas desarrollar dentro de este proyecto fue a la hora de crear las APIS necesarias
+para el proyecto fue el decidir con certeza y saber diferenciar completamente cual codigo de estatus HTTP deberia de usar
+aunque aun me sigue costando un poco, a pesar de que ya he trabajado con ellas con anterioridad. Lo que agregaria en una empresa seria el usar o expander aun mas el uso y manejo de roles y permisos del sistema para hacerlo mucho mas personalizable.
 
 **Said López Jr.:** Lo que más me costó fue la integración con Gemini en `/tareas/prioridad`. Al principio pensaba que reintentar siempre era lo más seguro, pero entendí que no: si la IA ya tardó 5 segundos, volver a intentarlo solo hace esperar más al usuario, y un error 400 va a fallar igual las veces que lo mandes. Por eso solo reintentamos los 429 y 5xx, con una espera corta entre intentos. También aprendí que la documentación se queda atrás del código muy rápido: al revisarla al final encontramos mensajes de error que no coincidían y una validación del título que contaba bytes en lugar de letras, así que fallaba con acentos o con ñ. Si fuera un proyecto de empresa, agregaría registros y alertas para saber cuándo la IA empieza a fallar, un límite de peticiones por usuario y pruebas que comparen el contrato OpenAPI con lo que la API responde de verdad, para que la documentación nunca se desfase.
 
