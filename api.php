@@ -402,7 +402,7 @@ function validar_tarea(array $datos): array
     }
 
     if (array_key_exists('titulo', $datos)
-        && (!is_string($datos['titulo']) || strlen($datos['titulo']) < 3 || strlen($datos['titulo']) > 100)) {
+        && (!is_string($datos['titulo']) || longitud_texto($datos['titulo']) < 3 || longitud_texto($datos['titulo']) > 100)) {
         $detalles[] = 'titulo: debe ser texto de 3 a 100 caracteres';
     }
 
@@ -632,7 +632,7 @@ if ($metodo === 'DELETE' && str_starts_with($ruta, '/tasks/')) {
 if ($metodo === 'POST' && $ruta === '/tareas/prioridad') {
     $datos = leer_json();
     $titulo = $datos['titulo'] ?? null;
-    if (!is_string($titulo) || mb_strlen(trim($titulo)) < 3 || mb_strlen($titulo) > 100) {
+    if (!is_string($titulo) || longitud_texto(trim($titulo)) < 3 || longitud_texto($titulo) > 100) {
         error_api(422, 'Los datos no son válidos.', ['titulo: de 3 a 100 caracteres']);
     }
     $ia = preguntar_prioridad_a_la_ia(INSTRUCCION_IA . $titulo);   // a la IA solo le mandamos el título
@@ -640,7 +640,7 @@ if ($metodo === 'POST' && $ruta === '/tareas/prioridad') {
     if (!in_array($ia['prioridad'] ?? null, ['alta', 'media', 'baja'], true) || empty($ia['razon'])) {
         error_api(502, 'La IA respondió algo inesperado.', []);
     }
-    responder(200, ['prioridad' => $ia['prioridad'], 'razon' => mb_substr((string) $ia['razon'], 0, 200)]);
+    responder(200, ['prioridad' => $ia['prioridad'], 'razon' => recortar_texto((string) $ia['razon'], 200)]);
 }
 
 if (str_starts_with($ruta, '/tasks')) {
