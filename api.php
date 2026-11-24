@@ -3,7 +3,17 @@
 declare(strict_types=1);
 
 const DATABASE_FILE = __DIR__ . '/tasks.sqlite';
-define('JWT_SECRET', getenv('JWT_SECRET') ?: 'clave-de-desarrollo-cambiala-en-produccion-2026');
+
+// Errores inesperados: se registran en la consola del servidor y el cliente solo recibe un 500 en JSON, sin trazas
+ini_set('display_errors', '0');
+set_exception_handler(function (Throwable $e): void {
+    error_log((string) $e);
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=utf-8');
+    }
+    echo json_encode(['error' => 'Error interno del servidor.', 'detalles' => []], JSON_UNESCAPED_UNICODE);
+});
 
 $ruta_actual = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $origenes_permitidos = array_map('trim', explode(',', getenv('CORS_ORIGIN') ?: 'http://127.0.0.1:5500,http://localhost:5500'));
@@ -53,18 +63,23 @@ HTML;
 }
 
 if (rtrim($ruta_actual, '/') === '/openapi.json') {
-    $nombre_contrato = 'openapi.json';
-    $contrato = file_get_contents(__DIR__ . '/' . $nombre_contrato);
+    header('Content-Type: application/json; charset=utf-8');
+    $contrato = @file_get_contents(__DIR__ . '/openapi.json');
     if ($contrato === false) {
-        http_response_code(500);
-        exit('No se pudo leer el contrato OpenAPI.');
+        error_api(500, 'No se pudo leer el contrato OpenAPI.', []);
     }
-    header('Content-Type: ' . ($nombre_contrato === 'openapi.json' ? 'application/json' : 'application/yaml') . '; charset=utf-8');
     echo $contrato;
     exit;
 }
 
 header('Content-Type: application/json; charset=utf-8');
+
+// El secreto de los tokens sale solo de la variable de entorno: no hay ninguno escrito en el código
+$jwt_secret = getenv('JWT_SECRET');
+if ($jwt_secret === false || $jwt_secret === '') {
+    error_api(503, 'Falta configurar la variable de entorno JWT_SECRET.', []);
+}
+define('JWT_SECRET', $jwt_secret);
 
 function responder(int $codigo, mixed $cuerpo): never
 {
@@ -387,7 +402,7 @@ function validar_tarea(array $datos): array
     }
 
     if (array_key_exists('titulo', $datos)
-        && (!is_string($datos['titulo']) || strlen($datos['titulo']) < 3 || strlen($datos['titulo']) > 100)) {
+        && (!is_string($datos['titulo']) || longitud_texto($datos['titulo']) < 3 || longitud_texto($datos['titulo']) > 100)) {
         $detalles[] = 'titulo: debe ser texto de 3 a 100 caracteres';
     }
 
@@ -617,7 +632,7 @@ if ($metodo === 'DELETE' && str_starts_with($ruta, '/tasks/')) {
 if ($metodo === 'POST' && $ruta === '/tareas/prioridad') {
     $datos = leer_json();
     $titulo = $datos['titulo'] ?? null;
-    if (!is_string($titulo) || mb_strlen(trim($titulo)) < 3 || mb_strlen($titulo) > 100) {
+    if (!is_string($titulo) || longitud_texto(trim($titulo)) < 3 || longitud_texto($titulo) > 100) {
         error_api(422, 'Los datos no son válidos.', ['titulo: de 3 a 100 caracteres']);
     }
     $ia = preguntar_prioridad_a_la_ia(INSTRUCCION_IA . $titulo);   // a la IA solo le mandamos el título
@@ -625,7 +640,7 @@ if ($metodo === 'POST' && $ruta === '/tareas/prioridad') {
     if (!in_array($ia['prioridad'] ?? null, ['alta', 'media', 'baja'], true) || empty($ia['razon'])) {
         error_api(502, 'La IA respondió algo inesperado.', []);
     }
-    responder(200, ['prioridad' => $ia['prioridad'], 'razon' => mb_substr((string) $ia['razon'], 0, 200)]);
+    responder(200, ['prioridad' => $ia['prioridad'], 'razon' => recortar_texto((string) $ia['razon'], 200)]);
 }
 
 if (str_starts_with($ruta, '/tasks')) {
